@@ -18,6 +18,7 @@ interface DeviceResponse {
 
 interface PropertyResponse {
     property: {
+        key: number;
         name: string;
         value: number | string;
     }
@@ -40,6 +41,9 @@ export const connect = async (email: string, password: string) => {
     let accessToken = loginResponse.data.access_token;
     let refreshToken = loginResponse.data.refresh_token;
 
+    const appActiveIdMap: { [deviceId: string]: number } = {};
+    const baseStationOnIdMap: { [deviceId: string]: number } = {};
+
     const runWithAuth = async <T> (fn: (auth: string) => Promise<AxiosResponse<T>>, retry = true): Promise<AxiosResponse<T>> => {
         try {
             return fn(`auth_token ${accessToken}`);
@@ -57,6 +61,60 @@ export const connect = async (email: string, password: string) => {
                 throw err;
             }
         }
+    };
+
+    const getPropertiesResponse = async (deviceId: string): Promise<AxiosResponse<PropertyResponse[]>> => {
+        return runWithAuth((auth) => {
+            return adsHttp.get<PropertyResponse[]>(`dsns/${deviceId}/properties.json`, {
+                headers: {
+                    Authorization: auth
+                }
+            });
+        });
+    };
+
+    const getPropertyId = async (deviceId: string, propertyId: string): Promise<number> => {
+        const response = await getPropertiesResponse(deviceId);
+        for (const { property } of response.data) {
+            if (property.name === propertyId) {
+                return property.key;
+            }
+        }
+    }
+
+    const getBaseStationOnId = async (deviceId: string): Promise<number> => {
+        if (!baseStationOnIdMap[deviceId]) {
+            baseStationOnIdMap[deviceId] = await getPropertyId(deviceId, "BASE_STATION_ON");
+        } 
+
+        return baseStationOnIdMap[deviceId];
+    }
+
+    const getAppActiveId = async (deviceId: string): Promise<number> => {
+        if (!appActiveIdMap[deviceId]) {
+            appActiveIdMap[deviceId] = await getPropertyId(deviceId, "APP_ACTIVE");
+        }
+
+        return appActiveIdMap[deviceId];
+    };
+
+    const setProperty = async (propertyId: number, value: any): Promise<void> => {
+        await runWithAuth((auth) => {
+            return adsHttp.post(`properties/${propertyId}/datapoints.json`, {
+                datapoint: {
+                    value: value
+                }
+            }, {
+                headers: {
+                    Authorization: auth
+                }
+            });
+        });
+    };
+
+    const sendAppActive = async (deviceId: string): Promise<void> => {
+        const appActiveId = await getAppActiveId(deviceId);
+        await setProperty(appActiveId, 1);
     };
 
     return {
@@ -79,15 +137,12 @@ export const connect = async (email: string, password: string) => {
         },
 
         async getProperties(deviceId: string) {
-            const response = await runWithAuth((auth) => {
-                return adsHttp.get<PropertyResponse[]>(`dsns/${deviceId}/properties.json`, {
-                    headers: {
-                        Authorization: auth
-                    }
-                });
-            });
+            await sendAppActive(deviceId);
+
+            const response = await getPropertiesResponse(deviceId);
 
             const responseAsMap: {[prop: string]: number | string} = {};
+
             for (const { property } of response.data) {
                 responseAsMap[property.name] = property.value;
             }
@@ -108,31 +163,13 @@ export const connect = async (email: string, password: string) => {
         },
 
         async turnBaseStationOn(deviceId: string) {
-            await runWithAuth((auth) => {
-                return adsHttp.post('properties/14852273/datapoints.json', {
-                    datapoint: {
-                        value: 1
-                    }
-                }, {
-                    headers: {
-                        Authorization: auth
-                    }
-                });
-            });
+            const baseStationOnId = await getBaseStationOnId(deviceId);
+            await setProperty(baseStationOnId, 1);
         },
 
         async turnBaseStationOff(deviceId: string) {
-            await runWithAuth((auth) => {
-                return adsHttp.post('properties/14852273/datapoints.json', {
-                    datapoint: {
-                        value: 0
-                    }
-                }, {
-                    headers: {
-                        Authorization: auth
-                    }
-                });
-            });
+            const baseStationOnId = await getBaseStationOnId(deviceId);
+            await setProperty(baseStationOnId, 0);
         }
     };
 };
