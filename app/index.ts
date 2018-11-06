@@ -45,9 +45,7 @@ export const connect = async (email: string, password: string) => {
     const baseStationOnIdMap: { [deviceId: string]: number } = {};
 
     const runWithAuth = async <T> (fn: (auth: string) => Promise<AxiosResponse<T>>, retry = true): Promise<AxiosResponse<T>> => {
-        try {
-            return fn(`auth_token ${accessToken}`);
-        } catch (err) {
+        return fn(`auth_token ${accessToken}`).catch(async (err) => {
             if (retry && err.response && err.response.status === 401) {
                 const refreshResponse = await userHttp.post<LoginResponse>('users/refresh_token.json', {
                     user: {
@@ -60,7 +58,7 @@ export const connect = async (email: string, password: string) => {
             } else {
                 throw err;
             }
-        }
+        });
     };
 
     const getPropertiesResponse = async (deviceId: string): Promise<AxiosResponse<PropertyResponse[]>> => {

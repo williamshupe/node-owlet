@@ -1,6 +1,6 @@
 {
   "name": "@williamshupe/owlet",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Node wrapper for the Owlet API",
   "author": "Tony Rosequist",
   "license": "GPL-3.0",
